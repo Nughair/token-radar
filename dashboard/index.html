@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch Radar — pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="css/radar.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+      <circle cx="24" cy="24" r="21" fill="none" stroke="#2dd4bf" stroke-width="2"/>
+      <circle cx="24" cy="24" r="13" fill="none" stroke="#2dd4bf" stroke-width="1" opacity="0.55"/>
+      <circle cx="24" cy="24" r="5" fill="none" stroke="#2dd4bf" stroke-width="1" opacity="0.35"/>
+      <path d="M24 24 L40 10" stroke="#f0b64c" stroke-width="2"/>
+      <circle cx="33" cy="30" r="3" fill="#f0b64c"/>
+      <circle cx="16" cy="15" r="2" fill="#2dd4bf"/>
+    </svg>
+    <div>
+      <h1>Launch Radar</h1>
+      <p class="tagline">Protocols that record no token yet, ranked by what a launch would be worth — and how to farm each one before it happens.</p>
+    </div>
+  </div>
+  <p class="provenance" id="provenance"></p>
+  <div class="stats" id="stats"></div>
+</header>
+
+<main>
+  <section class="card" aria-label="The ranked board">
+    <div class="toolbar">
+      <div class="segmented" role="group" aria-label="Board segment">
+        <button type="button" data-status="all" class="on">All ranked</button>
+        <button type="button" data-status="watchlist">Watchlist</button>
+        <button type="button" data-status="early">Early finds</button>
+      </div>
+      <label class="field">Search
+        <input id="q" type="search" placeholder="Protocol or category" autocomplete="off">
+      </label>
+      <label class="field">Category
+        <select id="category"></select>
+      </label>
+      <label class="field">Chain
+        <select id="chain"></select>
+      </label>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="board-table">
+        <thead>
+          <tr>
+            <th data-sort="rank" class="num sortable">Rank</th>
+            <th data-sort="name" class="sortable">Protocol</th>
+            <th>Status</th>
+            <th data-sort="tvl" class="num sortable">TVL</th>
+            <th data-sort="change" class="num sortable">7d change</th>
+            <th data-sort="age" class="num sortable">Tracked for</th>
+            <th class="num">Chains</th>
+            <th class="num">Category &times;</th>
+            <th data-sort="implied" class="num sortable">Implied value</th>
+          </tr>
+        </thead>
+        <tbody id="board-body"></tbody>
+      </table>
+    </div>
+    <p class="table-note">Implied value is this board's own claim: TVL &times; the category's trading multiple &times; momentum &times; track record &times; breadth. Click a row for the full workings and its farm plan. “Records no token” is DefiLlama's record as of the snapshot date, not proof a token does not exist.</p>
+  </section>
+
+  <section class="card" id="model-card" aria-label="How the radar values a launch">
+    <h2>How the radar values a launch</h2>
+    <div id="model-body"></div>
+  </section>
+
+  <section class="card" id="live-card" aria-label="Already trading">
+    <h2>Already trading — the calibration set</h2>
+    <p class="section-note">These protocols' tokens already trade, so the radar never ranks them: it shows the market's own value for each. Their market-cap-to-TVL ratios are the evidence the board's category multiples are built from.</p>
+    <div class="table-wrap">
+      <table id="live-table">
+        <thead>
+          <tr><th>Protocol</th><th>Token</th><th>Category</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">MCap / TVL</th><th class="num">7d change</th></tr>
+        </thead>
+        <tbody id="live-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>Built from one sealed snapshot of DefiLlama's protocol list. The radar derives everything from that snapshot's own figures; it does not predict whether or when any protocol issues a token. Farm plans are starting points, not advice: check a protocol's own site and contracts before committing funds, and never pay a third party to unlock an allocation.</p>
+  </footer>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Protocol detail"></aside>
+
+<script src="../data.js"></script>
+<script src="js/format.js"></script>
+<script src="js/board.js"></script>
+<script src="js/detail.js"></script>
+<script src="js/live.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

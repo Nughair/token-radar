@@ -96,6 +96,14 @@
 
   function init(selectHandler) {
     onSelect = selectHandler;
+    var strip = document.getElementById('validation-strip');
+    if (strip) {
+      strip.textContent =
+        'Blind-tested two ways before any row was priced — leave-one-out ×' + DATA.backtest.median_multiple.toFixed(2) +
+        ' median error over ' + DATA.backtest.n + ' launches · walk-forward ×' + DATA.walkforward.median_multiple.toFixed(2) +
+        ' over ' + DATA.walkforward.tested + ' out-of-time prices. Each row\u2019s band is read at its own size: ×' +
+        DATA.band.min_multiple.toFixed(2) + '–×' + DATA.band.max_multiple.toFixed(2) + '.';
+    }
     var categories = Array.from(new Set(DATA.rows.map(function (r) { return r.category || 'Uncategorised'; }))).sort();
     var chains = Array.from(new Set(DATA.rows.flatMap(function (r) { return r.chains; }))).sort();
     fillSelect('category', categories, 'All categories');

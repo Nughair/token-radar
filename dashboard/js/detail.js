@@ -39,7 +39,7 @@
     var m = row.model;
     var plan = row.plan;
     var fit = DATA.fit;
-    var bt = DATA.backtest;
+    var band = DATA.band;
     var drawer = document.getElementById('drawer');
     var scrim = document.getElementById('scrim');
     drawer.textContent = '';
@@ -89,9 +89,28 @@
     workings.appendChild(A.el('div', { class: 'line total' },
       A.el('span', null, 'Implied value of a launch'), A.el('b', null, A.fmtUsd(row.implied_value_usd))));
     workings.appendChild(plainLine(
-      'Backtest band — ÷/× ' + bt.median_multiple.toFixed(2) + ', the blind test\u2019s median error',
+      'Local band — ÷/× ' + row.band_multiple.toFixed(2) + ', from the ' + band.neighbours +
+        ' traded launches nearest this size (global ×' + band.global_multiple.toFixed(2) + ')',
       A.fmtUsd(row.band_low_usd) + ' – ' + A.fmtUsd(row.band_high_usd)));
     drawer.appendChild(workings);
+
+    drawer.appendChild(A.el('h3', null, 'Nearest traded comparables'));
+    var comps = A.el('div', { class: 'workings' });
+    var here = Math.log10(Math.max(1, row.tvl_usd));
+    var nearest = DATA.comps.slice().sort(function (a, b) {
+      var d = Math.abs(Math.log10(a.tvl_usd) - here) - Math.abs(Math.log10(b.tvl_usd) - here);
+      return d !== 0 ? d : (a.slug < b.slug ? -1 : 1);
+    }).slice(0, 3);
+    nearest.forEach(function (comp) {
+      comps.appendChild(plainLine(
+        comp.name + ' — TVL ' + A.fmtUsd(comp.tvl_usd) + ', trades at ' + A.fmtUsd(comp.mcap_usd) +
+          ' (' + (comp.mcap_usd / comp.tvl_usd).toFixed(2) + '× TVL)',
+        'blind error ×' + comp.loo_multiple.toFixed(2)));
+    });
+    comps.appendChild(A.el('p', { class: 'comp-note' },
+      'The traded launches closest to this protocol\u2019s size, and the error the blind test earned on each — ' +
+      'the local evidence this row\u2019s band is read from.'));
+    drawer.appendChild(comps);
 
     drawer.appendChild(A.el('h3', null, 'The netting'));
     var netting = A.el('div', { class: 'workings' });

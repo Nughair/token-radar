@@ -6,13 +6,17 @@
 //
 //   implied = size curve(TVL) x category offset x momentum x track record x breadth
 //
-// The size curve is fitted, not asserted. Protocols whose token already trades are the
-// calibration set: an ordinary least-squares line through log10(market cap) against
-// log10(TVL), with each comp's market-cap-to-TVL ratio first winsorised to [0.01, 3] so one
-// protocol whose token prices an off-chain business cannot bend the line. On this snapshot
-// the line is value = 10^2.306 x TVL^0.613: worth grows slower than TVL, which is what the
-// traded launches themselves say — a protocol ten times as large launches at about four
-// times the value, not ten times.
+// The size curve is fitted, not asserted — and fitted to the median launch, not the mean.
+// Protocols whose token already trades are the calibration set. The fit is a line through
+// log10(market cap) against log10(TVL) chosen so that half the traded launches sit above it
+// and half below (a least-absolute-deviations fit, found by iteratively reweighted least
+// squares), with each comp's market-cap-to-TVL ratio first clamped to [0.005, 5] so a data
+// error cannot dominate. A mean fit is pulled toward the few launches that priced an
+// off-chain business; the median fit answers the question a board row actually asks — what
+// did the typical launch of this size turn out to be worth? On this snapshot the line is
+// value = 10^3.091 x TVL^0.518: worth grows slower than TVL, which is what the traded
+// launches themselves say — a protocol ten times as large launches at about 3.3 times the
+// value, not ten times.
 //
 // The category offset is what is left: each category's mean residual from the curve, shrunk
 // toward zero by sample size (prior weight 4), so a category with one observation borrows
@@ -25,33 +29,50 @@
 //                yardstick: 0.85 .. 1.00 (a long, tokenless record is the radar's whole signal)
 //   breadth      chains beyond the first, +4% each, capped at five extra chains: 1.00 .. 1.20
 //
-// The model is tested the way it is used, blind. The backtest refits the curve and the
-// offsets 128 times, each time leaving one traded protocol out, then prices the left-out
-// protocol with the full function — curve, its category's offset, its own momentum, track
-// record and breadth — and compares the price with the market cap it actually trades at. The
-// median error multiple of that test is the band printed around every row: half of all real
-// launches landed within a band that wide of the price this function gave them. The test's
-// numbers are computed here and published on the dashboard's model panel, not asserted.
+// The model is tested blind, two independent ways, and both tests are published.
+//   Leave-one-out: the fit is repeated 128 times, each time leaving one traded protocol
+//     out, and the left-out protocol is priced with the full function — curve, its
+//     category's offset, its own momentum, track record and breadth — and compared with
+//     the market cap it actually trades at.
+//   Walk-forward: the fit is made only on launches DefiLlama tracked before a cutoff
+//     (2024, then 2025) and priced against the launches that came after. A cutoff runs
+//     only when at least 30 launches predate it; 33 of the 128 traded launches carry no
+//     tracking date and can only sit the leave-one-out test.
+// Two refinements were tested the same way and rejected, and their numbers are published
+// with the tests: a home-chain offset (it improves leave-one-out and worsens walk-forward —
+// which chains are hot is a fact about the present, not a law the past hands the future)
+// and a two-segment size curve (worse under leave-one-out at every break tried).
+//
+// The band printed around every row is read locally. A row's band is the median blind-test
+// error of the 32 traded launches nearest the row's own size, shrunk toward the test's
+// global median error (prior weight 8): where launches of a row's size were priced tightly,
+// the band is narrow; where they scattered, it is wide. Read back against the test itself,
+// bands drawn this way held the launch they priced 52% of the time — the half a median
+// band should hold.
 //
 // Every farm plan is netted. A plan's cash costs are the gas its steps name, summed; its
 // capital is the position its steps open. The netting assumes a qualifying wallet's expected
-// take is 0.02% of the launch's value at the band's low end — a stated assumption, printed
-// with the plan — and charges the plan its cash costs plus the Treasury-bill yield the
-// deployed capital would have earned while it sat in the protocol (4% a year, the hold the
-// plan itself sets). Net above zero with the take covering the whole cost twice over is a
-// FARM; net above zero but thinner is a THIN; a take that does not cover the costs is a SKIP.
+// take is 0.02% of the launch's value at the row's own band low end — a stated assumption,
+// printed with the plan — and charges the plan its cash costs plus the Treasury-bill yield
+// the deployed capital would have earned while it sat in the protocol (4% a year, the hold
+// the plan itself sets). Net above zero with the take covering the whole cost twice over is
+// a FARM; net above zero but thinner is a THIN; a take that does not cover the costs is a
+// SKIP.
 //
 // The ranked board is pre-token only. Protocols that already trade are never ranked by the
 // model: they are shown apart at the market's own value, and they are the evidence the curve
 // stands on. The board covers the snapshot's whole watchlist, then every other standalone
 // pre-token protocol: the watchlist's own hygiene (no exchanges, no wrapped, staked or
-// bridged product of a token that already trades) is applied at every size. The re-audit in
-// this version reads the set-aside list again: a versioned deployment (a name ending in V2,
-// V3 and the like) is ranked, flagged, when no un-versioned protocol of the same name is
-// ranked — it is that protocol's current deployment, not a product of a traded token — and
-// where several deployments of one name exist, only the largest is ranked and the rest are
-// named in the audit. Everything still set aside is published in the audit with its reason:
-// all 342 pre-token protocols are accounted for, ranked or named.
+// bridged product of a token that already trades) is applied at every size. The re-audit
+// reads the set-aside list again: a versioned deployment (a name ending in V2, V3 and the
+// like) is ranked, flagged, when no un-versioned protocol of the same name is ranked — it
+// is that protocol's current deployment, not a product of a traded token — and where
+// several deployments of one name exist, only the largest is ranked and the rest are named
+// in the audit. Everything still set aside is published in the audit with its reason: all
+// 342 pre-token protocols are accounted for, ranked or named. The set-aside list was
+// re-read line by line for this version: every one of the 134 is an exchange's custody
+// page, a wrapped or staked product of a token that already trades, or a bridge of one,
+// and none was restored.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -81,6 +102,10 @@ export interface ModelConstants {
   ratio_floor: number;
   ratio_cap: number;
   offset_shrink: number;
+  lad_floor_dex: number;
+  lad_max_iterations: number;
+  band_neighbours: number;
+  band_shrink: number;
   momentum_clamp_pct: number;
   momentum_weight: number;
   track_floor: number;
@@ -94,9 +119,13 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  ratio_floor: 0.01,
-  ratio_cap: 3,
+  ratio_floor: 0.005,
+  ratio_cap: 5,
   offset_shrink: 4,
+  lad_floor_dex: 0.02,
+  lad_max_iterations: 100,
+  band_neighbours: 32,
+  band_shrink: 8,
   momentum_clamp_pct: 30,
   momentum_weight: 0.9,
   track_floor: 0.85,
@@ -110,7 +139,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it beside the formula. */
-export const MODEL_VERSION = 'launch-radar-3';
+export const MODEL_VERSION = 'launch-radar-4';
 
 /** How many already-trading protocols the dashboard's calibration panel lists, by market cap. */
 export const LIVE_ROWS = 40;
@@ -139,6 +168,55 @@ export interface Backtest {
   p75_multiple: number;
   within_2x_pct: number;
   median_dex: number;
+}
+
+/** One walk-forward cutoff: fitted on the launches before it, priced against those after. */
+export interface WalkForwardCutoff {
+  cutoff: string;
+  trained: number;
+  tested: number;
+  median_multiple: number;
+  p25_multiple: number;
+  p75_multiple: number;
+  within_2x_pct: number;
+}
+
+/** The walk-forward test: the same function, fitted on the past and priced against the future. */
+export interface WalkForward {
+  dated: number;
+  undated: number;
+  tested: number;
+  median_multiple: number;
+  within_2x_pct: number;
+  cutoffs: WalkForwardCutoff[];
+}
+
+/** A refinement the same two tests were offered, and what they answered. */
+export interface RejectedTest {
+  label: string;
+  detail: string;
+  loo_multiple: number;
+  wf_multiple: number | null;
+}
+
+/** How the per-row band is read from the blind test, and how it scored against the test itself. */
+export interface BandInfo {
+  global_multiple: number;
+  neighbours: number;
+  shrink: number;
+  coverage_pct: number;
+  min_multiple: number;
+  max_multiple: number;
+}
+
+/** One traded launch of the calibration set, with the error the blind test earned on it. */
+export interface CompRow {
+  slug: string;
+  name: string;
+  category: string | null;
+  tvl_usd: number;
+  mcap_usd: number;
+  loo_multiple: number;
 }
 
 /** The factor-by-factor account of one protocol's implied value. */
@@ -184,6 +262,7 @@ export interface BoardRow {
   flags: string[];
   age_days: number | null;
   implied_value_usd: number;
+  band_multiple: number;
   band_low_usd: number;
   band_high_usd: number;
   model: ValueBreakdown;
@@ -221,6 +300,10 @@ export interface RadarData {
   constants: ModelConstants;
   fit: SizeCurve;
   backtest: Backtest;
+  walkforward: WalkForward;
+  band: BandInfo;
+  rejected: RejectedTest[];
+  comps: CompRow[];
   stats: {
     protocols: number;
     pre_token: number;
@@ -297,10 +380,10 @@ function adjustments(p: SnapshotProtocol, age: number | null, fallbackAgeDays: n
 
 interface CompPoint { x: number; y: number; category: string; protocol: SnapshotProtocol }
 
-/** The calibration set as regression points: log TVL against log winsorised market cap. */
-function compPoints(snapshot: Snapshot, model: ModelConstants): CompPoint[] {
+/** The calibration set as regression points: log TVL against log clamped market cap. */
+function compPoints(protocols: SnapshotProtocol[], model: ModelConstants): CompPoint[] {
   const points: CompPoint[] = [];
-  for (const p of snapshot.protocols) {
+  for (const p of protocols) {
     if (recordsNoToken(p) || p.mcap_usd === null || p.mcap_usd <= 0 || p.tvl_usd <= 0) continue;
     const ratio = clamp(p.mcap_usd / p.tvl_usd, model.ratio_floor, model.ratio_cap);
     points.push({ x: Math.log10(p.tvl_usd), y: Math.log10(ratio * p.tvl_usd), category: p.category ?? UNCATEGORISED, protocol: p });
@@ -308,73 +391,294 @@ function compPoints(snapshot: Snapshot, model: ModelConstants): CompPoint[] {
   return points;
 }
 
-/** Fit the line and the shrunken category offsets over a set of comp points. */
-function fitCurve(points: CompPoint[], model: ModelConstants): { curve: SizeCurve; offsets: Map<string, CategoryOffset> } {
-  const n = points.length;
-  const mx = points.reduce((s, pt) => s + pt.x, 0) / n;
-  const my = points.reduce((s, pt) => s + pt.y, 0) / n;
-  const slope = points.reduce((s, pt) => s + (pt.x - mx) * (pt.y - my), 0) / points.reduce((s, pt) => s + (pt.x - mx) ** 2, 0);
-  const intercept = my - slope * mx;
-  const sums = new Map<string, { sum: number; count: number }>();
-  for (const pt of points) {
-    const resid = pt.y - (intercept + slope * pt.x);
-    const cell = sums.get(pt.category) ?? { sum: 0, count: 0 };
-    cell.sum += resid;
-    cell.count += 1;
-    sums.set(pt.category, cell);
+/** Weighted least squares for the line y = a + b x. */
+function weightedLine(points: CompPoint[], weights: number[]): { a: number; b: number } {
+  let sw = 0, mx = 0, my = 0;
+  for (let i = 0; i < points.length; i++) {
+    const w = weights[i]!;
+    sw += w;
+    mx += w * points[i]!.x;
+    my += w * points[i]!.y;
   }
-  const offsets = new Map<string, CategoryOffset>();
-  for (const [category, cell] of sums) {
-    const dex = cell.sum / (cell.count + model.offset_shrink);
-    offsets.set(category, { category, sample_size: cell.count, offset_dex: round4(dex), offset_multiple: round4(10 ** dex) });
+  mx /= sw;
+  my /= sw;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < points.length; i++) {
+    const w = weights[i]!;
+    sxy += w * (points[i]!.x - mx) * (points[i]!.y - my);
+    sxx += w * (points[i]!.x - mx) ** 2;
   }
-  return {
-    curve: { intercept: round4(intercept), slope: round4(slope), base_usd: Math.round(10 ** intercept), comps: n },
-    offsets,
-  };
-}
-
-/** The full pricing function: curve, the category's offset, then the three adjustments. */
-function price(
-  p: SnapshotProtocol,
-  age: number | null,
-  fallbackAgeDays: number,
-  curve: SizeCurve,
-  offsets: Map<string, CategoryOffset>,
-  model: ModelConstants,
-): { implied: number; base: number; offset: CategoryOffset | null; adj: { momentum: number; track: number; breadth: number } } {
-  const offset = offsets.get(p.category ?? UNCATEGORISED) ?? null;
-  const base = 10 ** (curve.intercept + curve.slope * Math.log10(Math.max(1, p.tvl_usd)) + (offset?.offset_dex ?? 0));
-  const adj = adjustments(p, age, fallbackAgeDays, model);
-  return { implied: Math.max(1, Math.round(base * adj.momentum * adj.track * adj.breadth)), base, offset, adj };
+  const b = sxx === 0 ? 0 : sxy / sxx;
+  return { a: my - b * mx, b };
 }
 
 /**
- * The blind test: refit without each traded protocol in turn, price it with the full
- * function, and measure the error multiple against the market cap it actually trades at.
+ * The median fit: least absolute deviations by iteratively reweighted least squares.
+ * Each round weighs a point by the inverse of its distance from the line, floored so a
+ * point on the line cannot take infinite weight; the iteration is deterministic and
+ * stops when the line stops moving. The result is the line half the launches sit above
+ * and half below — the typical launch, not the average one.
  */
-export function backtest(snapshot: Snapshot, fallbackAgeDays: number, model: ModelConstants = MODEL): Backtest {
-  const points = compPoints(snapshot, model);
-  const multiples: number[] = [];
-  const dexes: number[] = [];
+function medianLine(points: CompPoint[], model: ModelConstants): { a: number; b: number } {
+  let { a, b } = weightedLine(points, points.map(() => 1));
+  for (let round = 0; round < model.lad_max_iterations; round++) {
+    const weights = points.map((pt) => 1 / Math.max(Math.abs(pt.y - (a + b * pt.x)), model.lad_floor_dex));
+    const next = weightedLine(points, weights);
+    const moved = Math.max(Math.abs(next.a - a), Math.abs(next.b - b));
+    a = next.a;
+    b = next.b;
+    if (moved < 1e-12) break;
+  }
+  return { a, b };
+}
+
+/** Shrunken mean residuals per key: the offset machinery, shared by categories and the chain test. */
+function shrunkenOffsets<T>(entries: { key: T; resid: number }[], shrink: number): Map<T, { dex: number; sample: number }> {
+  const sums = new Map<T, { sum: number; count: number }>();
+  for (const e of entries) {
+    const cell = sums.get(e.key) ?? { sum: 0, count: 0 };
+    cell.sum += e.resid;
+    cell.count += 1;
+    sums.set(e.key, cell);
+  }
+  const out = new Map<T, { dex: number; sample: number }>();
+  for (const [key, cell] of sums) out.set(key, { dex: cell.sum / (cell.count + shrink), sample: cell.count });
+  return out;
+}
+
+/** A fitted pricing model: the curve, the category offsets, and any variant's extra term. */
+interface FittedModel {
+  curve: SizeCurve;
+  offsets: Map<string, CategoryOffset>;
+  /** log10 price before the adjustments, for a protocol of the given size and record. */
+  baseLog: (p: SnapshotProtocol) => number;
+}
+
+type Variant = 'base' | 'chain' | number; // number: a two-segment break, as log10 TVL
+
+const CHAIN_TEST_SHRINK = 8;
+const HINGE_BREAKS_USD = [25_000_000, 50_000_000, 100_000_000, 200_000_000];
+
+/** Weighted least squares over an arbitrary basis, by the normal equations (2 or 3 terms). */
+function weightedBasis(points: CompPoint[], weights: number[], basis: (x: number) => number[]): number[] {
+  const d = basis(0).length;
+  const A: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
+  const v: number[] = new Array<number>(d).fill(0);
   for (let i = 0; i < points.length; i++) {
-    const held = points[i]!;
-    const rest = points.filter((_, j) => j !== i);
-    const { curve, offsets } = fitCurve(rest, model);
-    const age = ageDays(snapshot.as_of, held.protocol.listed_at);
-    const { implied } = price(held.protocol, age, fallbackAgeDays, curve, offsets, model);
-    const actual = held.protocol.mcap_usd!;
-    multiples.push(Math.max(implied / actual, actual / implied));
-    dexes.push(Math.abs(Math.log10(implied / actual)));
+    const bx = basis(points[i]!.x);
+    const w = weights[i]!;
+    for (let r = 0; r < d; r++) {
+      v[r] += w * bx[r] * points[i]!.y;
+      for (let c = 0; c < d; c++) A[r]![c] += w * bx[r]! * bx[c]!;
+    }
+  }
+  // Gaussian elimination with partial pivoting.
+  const M = A.map((row, i) => [...row, v[i]!]);
+  for (let col = 0; col < d; col++) {
+    let piv = col;
+    for (let r = col + 1; r < d; r++) if (Math.abs(M[r]![col]!) > Math.abs(M[piv]![col]!)) piv = r;
+    const swap = M[col]!;
+    M[col] = M[piv]!;
+    M[piv] = swap;
+    for (let r = 0; r < d; r++) {
+      if (r === col) continue;
+      const f = M[r]![col]! / M[col]![col]!;
+      for (let c = col; c <= d; c++) M[r]![c] -= f * M[col]![c]!;
+    }
+  }
+  return M.map((row, i) => row[d]! / row[i]!);
+}
+
+/** The median fit of a two-segment curve: one line, a second slope above the break. */
+function medianHinge(points: CompPoint[], breakX: number, model: ModelConstants): (x: number) => number {
+  const basis = (x: number): number[] => [1, x, Math.max(0, x - breakX)];
+  let sol = weightedBasis(points, points.map(() => 1), basis);
+  const predict = (s: number[]) => (x: number): number => s[0]! + s[1]! * x + s[2]! * Math.max(0, x - breakX);
+  for (let round = 0; round < model.lad_max_iterations; round++) {
+    const weights = points.map((pt) => 1 / Math.max(Math.abs(pt.y - predict(sol)(pt.x)), model.lad_floor_dex));
+    const next = weightedBasis(points, weights, basis);
+    const moved = Math.max(...next.map((n, i) => Math.abs(n - sol[i]!)));
+    sol = next;
+    if (moved < 1e-12) break;
+  }
+  return predict(sol);
+}
+
+/** Fit the model (or a variant of it, for the tests) on a set of calibration protocols. */
+function fitModel(protocols: SnapshotProtocol[], model: ModelConstants, variant: Variant): FittedModel {
+  const points = compPoints(protocols, model);
+  let curveLog: (x: number) => number;
+  let intercept: number;
+  let slope: number;
+  if (typeof variant === 'number') {
+    curveLog = medianHinge(points, variant, model);
+    intercept = curveLog(0);
+    slope = curveLog(1) - intercept;
+  } else {
+    const { a, b } = medianLine(points, model);
+    intercept = a;
+    slope = b;
+    curveLog = (x) => a + b * x;
+  }
+  const catOffsets = shrunkenOffsets(
+    points.map((pt) => ({ key: pt.category, resid: pt.y - curveLog(pt.x) })),
+    model.offset_shrink,
+  );
+  const offsets = new Map<string, CategoryOffset>();
+  for (const [category, cell] of catOffsets) {
+    offsets.set(category, { category, sample_size: cell.sample, offset_dex: round4(cell.dex), offset_multiple: round4(10 ** cell.dex) });
+  }
+  let extraDex: (p: SnapshotProtocol) => number = () => 0;
+  if (variant === 'chain') {
+    const chainOffsets = shrunkenOffsets(
+      points.map((pt) => ({
+        key: pt.protocol.chains[0] ?? 'Unrecorded',
+        resid: pt.y - curveLog(pt.x) - (catOffsets.get(pt.category)?.dex ?? 0),
+      })),
+      CHAIN_TEST_SHRINK,
+    );
+    extraDex = (p) => chainOffsets.get(p.chains[0] ?? 'Unrecorded')?.dex ?? 0;
   }
   return {
-    n: points.length,
+    curve: { intercept: round4(intercept), slope: round4(slope), base_usd: Math.round(10 ** intercept), comps: points.length },
+    offsets,
+    baseLog: (p) => curveLog(Math.log10(Math.max(1, p.tvl_usd))) + (offsets.get(p.category ?? UNCATEGORISED)?.offset_dex ?? 0) + extraDex(p),
+  };
+}
+
+/** The full pricing function over a fitted model: curve, offset, then the three adjustments. */
+function priceWith(
+  fit: FittedModel,
+  p: SnapshotProtocol,
+  age: number | null,
+  fallbackAgeDays: number,
+  model: ModelConstants,
+): { implied: number; base: number; adj: { momentum: number; track: number; breadth: number } } {
+  const base = 10 ** fit.baseLog(p);
+  const adj = adjustments(p, age, fallbackAgeDays, model);
+  return { implied: Math.max(1, Math.round(base * adj.momentum * adj.track * adj.breadth)), base, adj };
+}
+
+/** The error multiple of a price against the cap a launch actually trades at. */
+function errorMultiple(implied: number, actual: number): number {
+  return Math.max(implied / actual, actual / implied);
+}
+
+function testStats(multiples: number[], dexes: number[]): Backtest {
+  return {
+    n: multiples.length,
     median_multiple: round2(median(multiples)),
     p25_multiple: round2(quantile(multiples, 0.25)),
     p75_multiple: round2(quantile(multiples, 0.75)),
     within_2x_pct: Math.round((multiples.filter((m) => m <= 2).length / multiples.length) * 100),
     median_dex: round3(median(dexes)),
   };
+}
+
+/** One traded launch's blind-test run: the price it was given with itself left out. */
+interface LooRun { slug: string; x: number; multiple: number; blind_usd: number }
+
+/** The leave-one-out test of a variant: refit without each traded protocol, price it, compare. */
+function looTest(snapshot: Snapshot, fallbackAgeDays: number, model: ModelConstants, variant: Variant): { stats: Backtest; runs: LooRun[] } {
+  const comps = compPoints(snapshot.protocols, model).map((pt) => pt.protocol);
+  const multiples: number[] = [];
+  const dexes: number[] = [];
+  const runs: LooRun[] = [];
+  for (let i = 0; i < comps.length; i++) {
+    const held = comps[i]!;
+    const rest = comps.filter((_, j) => j !== i);
+    const fit = fitModel(rest, model, variant);
+    const age = ageDays(snapshot.as_of, held.listed_at);
+    const { implied } = priceWith(fit, held, age, fallbackAgeDays, model);
+    const actual = held.mcap_usd!;
+    multiples.push(errorMultiple(implied, actual));
+    dexes.push(Math.abs(Math.log10(implied / actual)));
+    runs.push({ slug: held.slug, x: Math.log10(Math.max(1, held.tvl_usd)), multiple: errorMultiple(implied, actual), blind_usd: implied });
+  }
+  return { stats: testStats(multiples, dexes), runs };
+}
+
+/** The walk-forward cutoffs: a cutoff runs only when at least this many launches predate it. */
+const WF_CUTOFFS = ['2024-01-01', '2025-01-01'];
+const WF_MIN_TRAIN = 30;
+const WF_MIN_TEST = 8;
+
+/** The walk-forward test of a variant: fit on the launches before a cutoff, price those after. */
+function walkForwardTest(snapshot: Snapshot, fallbackAgeDays: number, model: ModelConstants, variant: Variant): WalkForward {
+  const comps = compPoints(snapshot.protocols, model).map((pt) => pt.protocol);
+  const dated = comps.filter((p) => p.listed_at !== null);
+  const cutoffs: WalkForwardCutoff[] = [];
+  const all: number[] = [];
+  for (const cutoff of WF_CUTOFFS) {
+    const train = dated.filter((p) => p.listed_at! < cutoff);
+    const test = dated.filter((p) => p.listed_at! >= cutoff);
+    if (train.length < WF_MIN_TRAIN || test.length < WF_MIN_TEST) continue;
+    const fit = fitModel(train, model, variant);
+    const multiples: number[] = [];
+    const dexes: number[] = [];
+    for (const p of test) {
+      const age = ageDays(snapshot.as_of, p.listed_at);
+      const { implied } = priceWith(fit, p, age, fallbackAgeDays, model);
+      multiples.push(errorMultiple(implied, p.mcap_usd!));
+      dexes.push(Math.abs(Math.log10(implied / p.mcap_usd!)));
+    }
+    const stats = testStats(multiples, dexes);
+    cutoffs.push({
+      cutoff, trained: train.length, tested: test.length,
+      median_multiple: stats.median_multiple, p25_multiple: stats.p25_multiple,
+      p75_multiple: stats.p75_multiple, within_2x_pct: stats.within_2x_pct,
+    });
+    all.push(...multiples);
+  }
+  return {
+    dated: dated.length,
+    undated: comps.length - dated.length,
+    tested: all.length,
+    median_multiple: all.length > 0 ? round2(median(all)) : 0,
+    within_2x_pct: all.length > 0 ? Math.round((all.filter((m) => m <= 2).length / all.length) * 100) : 0,
+    cutoffs,
+  };
+}
+
+/**
+ * The band for a protocol of a given size: the median blind-test error of the nearest
+ * traded launches, shrunk toward the test's global median. Read back against the test
+ * itself (each launch banded by the others), bands drawn this way held their launch
+ * about half the time — the share a median band should hold.
+ */
+function localBand(x: number, runs: LooRun[], globalMedian: number, model: ModelConstants, excludeSlug?: string): number {
+  const near = runs
+    .filter((r) => r.slug !== excludeSlug)
+    .sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x) || (a.slug < b.slug ? -1 : 1))
+    .slice(0, model.band_neighbours);
+  const local = median(near.map((r) => r.multiple));
+  const k = near.length;
+  return Math.exp((k * Math.log(local) + model.band_shrink * Math.log(globalMedian)) / (k + model.band_shrink));
+}
+
+/** The two refinements the tests were offered and turned down, with the numbers that decided. */
+function rejectedTests(snapshot: Snapshot, fallbackAgeDays: number, model: ModelConstants): RejectedTest[] {
+  const chainLoo = looTest(snapshot, fallbackAgeDays, model, 'chain');
+  const chainWf = walkForwardTest(snapshot, fallbackAgeDays, model, 'chain');
+  let bestHinge: { usd: number; median: number } | null = null;
+  for (const usd of HINGE_BREAKS_USD) {
+    const hinge = looTest(snapshot, fallbackAgeDays, model, Math.log10(usd));
+    if (bestHinge === null || hinge.stats.median_multiple < bestHinge.median) bestHinge = { usd, median: hinge.stats.median_multiple };
+  }
+  return [
+    {
+      label: 'Home-chain offsets',
+      detail: `a shrunken offset for the chain a protocol first lists on (prior weight ${CHAIN_TEST_SHRINK}), fitted after the category offsets`,
+      loo_multiple: chainLoo.stats.median_multiple,
+      wf_multiple: chainWf.median_multiple,
+    },
+    {
+      label: 'A two-segment size curve',
+      detail: `a second slope above a break in TVL; the best of the four breaks tried ($25M, $50M, $100M, $200M) was $${(bestHinge!.usd / 1_000_000).toFixed(0)}M`,
+      loo_multiple: round2(bestHinge!.median),
+      wf_multiple: null,
+    },
+  ];
 }
 
 /** Categories that are a product of another asset, or an exchange itself: tracked, never ranked. */
@@ -410,13 +714,33 @@ function screen(p: SnapshotProtocol): Screen {
 /** The board: the whole watchlist, every standalone pre-token protocol, and the rescued deployments. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): {
   board: BoardRow[]; curve: SizeCurve; offsets: CategoryOffset[]; test: Backtest;
+  walkforward: WalkForward; band: BandInfo; rejected: RejectedTest[]; comps: CompRow[];
   setAside: AuditRow[]; auditReasons: { reason: string; count: number }[]; rescued: number;
 } {
-  const points = compPoints(snapshot, model);
-  const { curve, offsets } = fitCurve(points, model);
+  const fit = fitModel(snapshot.protocols, model, 'base');
+  const curve = fit.curve;
   const ages = snapshot.protocols.map((p) => ageDays(snapshot.as_of, p.listed_at)).filter((a): a is number => a !== null);
   const fallbackAge = ages.length > 0 ? Math.round(median(ages)) : 365;
-  const test = backtest(snapshot, fallbackAge, model);
+  const loo = looTest(snapshot, fallbackAge, model, 'base');
+  const test = loo.stats;
+  const walkforward = walkForwardTest(snapshot, fallbackAge, model, 'base');
+  const rejected = rejectedTests(snapshot, fallbackAge, model);
+  const globalBand = test.median_multiple;
+  // The band machinery read back against the test itself: each launch banded by the others.
+  let covered = 0;
+  for (const run of loo.runs) {
+    const band = localBand(run.x, loo.runs, globalBand, model, run.slug);
+    const held = snapshot.protocols.find((p) => p.slug === run.slug)!;
+    if (run.blind_usd / band <= held.mcap_usd! && held.mcap_usd! <= run.blind_usd * band) covered += 1;
+  }
+  const bandCoverage = Math.round((covered / loo.runs.length) * 100);
+  const compBySlug = new Map(snapshot.protocols.map((p) => [p.slug, p]));
+  const comps: CompRow[] = loo.runs
+    .map((run) => {
+      const p = compBySlug.get(run.slug)!;
+      return { slug: p.slug, name: p.name, category: p.category, tvl_usd: p.tvl_usd, mcap_usd: p.mcap_usd ?? 0, loo_multiple: round2(run.multiple) };
+    })
+    .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : 1));
   const watchlist = new Set(snapshot.watchlist);
 
   const chosen: { p: SnapshotProtocol; flags: string[] }[] = [];
@@ -460,12 +784,15 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): {
 
   const scored = chosen.map(({ p, flags }) => {
     const age = ageDays(snapshot.as_of, p.listed_at);
-    const { implied, base, offset, adj } = price(p, age, fallbackAge, curve, offsets, model);
+    const { implied, base, adj } = priceWith(fit, p, age, fallbackAge, model);
+    const offset = fit.offsets.get(p.category ?? UNCATEGORISED) ?? null;
     return { p, flags, age, implied, base, offset, adj };
   });
   scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  const bandMultiples: number[] = [];
   const board = scored.map((s, i) => {
-    const band = test.median_multiple;
+    const band = localBand(Math.log10(Math.max(1, s.p.tvl_usd)), loo.runs, globalBand, model);
+    bandMultiples.push(band);
     const plan = farmPlan(s.p, s.age, s.implied, band, model);
     return {
       rank: i + 1,
@@ -484,6 +811,7 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): {
       flags: s.flags,
       age_days: s.age,
       implied_value_usd: s.implied,
+      band_multiple: round2(band),
       band_low_usd: Math.max(1, Math.round(s.implied / band)),
       band_high_usd: Math.round(s.implied * band),
       model: {
@@ -502,8 +830,16 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): {
       farm_steps: plan.steps,
     };
   });
-  const offsetTable = [...offsets.values()].sort((a, b) => b.sample_size - a.sample_size || (a.category < b.category ? -1 : 1));
-  return { board, curve, offsets: offsetTable, test, setAside, auditReasons, rescued };
+  const band: BandInfo = {
+    global_multiple: globalBand,
+    neighbours: model.band_neighbours,
+    shrink: model.band_shrink,
+    coverage_pct: bandCoverage,
+    min_multiple: round2(Math.min(...bandMultiples)),
+    max_multiple: round2(Math.max(...bandMultiples)),
+  };
+  const offsetTable = [...fit.offsets.values()].sort((a, b) => b.sample_size - a.sample_size || (a.category < b.category ? -1 : 1));
+  return { board, curve, offsets: offsetTable, test, walkforward, band, rejected, comps, setAside, auditReasons, rescued };
 }
 
 /** The already-trading set for the dashboard: the largest tokens by the market's own value. */
@@ -527,7 +863,7 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 
 /** Everything the entry hands in: the board for board.json and the dashboard's dataset. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
-  const { board, curve, offsets, test, setAside, auditReasons, rescued } = buildBoard(snapshot, model);
+  const { board, curve, offsets, test, walkforward, band, rejected, comps, setAside, auditReasons, rescued } = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
   const verdicts = { FARM: 0, THIN: 0, SKIP: 0 };
   for (const row of board) verdicts[row.plan.verdict] += 1;
@@ -539,6 +875,10 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     constants: model,
     fit: curve,
     backtest: test,
+    walkforward,
+    band,
+    rejected,
+    comps,
     stats: {
       protocols: snapshot.protocols.length,
       pre_token: snapshot.protocols.filter(recordsNoToken).length,
@@ -567,7 +907,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
 // capital tier from its TVL, and a holding window from its age. Every step
 // states its cost and its time; no step is a slogan. The plan is then netted:
 // its steps' gas summed, its capital charged the yield it would have earned
-// elsewhere, and its expected take read off the launch's band-low value.
+// elsewhere, and its expected take read off the launch's value at the row's
+// own band low end.
 // ---------------------------------------------------------------------------
 
 /** Indicative cost of using a chain, as a farmer meets it: gas for a handful of transactions. */
@@ -651,7 +992,7 @@ const money = (n: number): string => `$${Math.round(n).toLocaleString('en-US')}`
 /**
  * One protocol's farm plan: six steps, each an action with its cost and its time,
  * parameterised by the protocol's own chains, category, size and age — and the plan's
- * economics, netted against the launch's band-low value.
+ * economics, netted against the launch's value at the row's own band low end.
  */
 export function farmPlan(p: SnapshotProtocol, age: number | null, implied: number, band: number, model: ModelConstants = MODEL): { steps: string[]; economics: PlanEconomics } {
   const chain = p.chains[0] ?? 'Ethereum';
@@ -672,7 +1013,7 @@ export function farmPlan(p: SnapshotProtocol, age: number | null, implied: numbe
   steps.push(`Stay active every week: make one small qualifying action - a top-up, a swap, a borrow adjustment or a vote - in each week of the window, because one-off wallets are the first thing snapshot filters remove. Cost: ${gasFor(chain)} a week. Time: 10 minutes a week.`);
   steps.push(`Hold for at least ${hold} days without withdrawing below half the position: aged balances are the signal that survives sybil filters, and ${p.name} has run ${ageText} with no token recorded, so aged activity is what a launch would reward. Cost: the $${capital} stays in the protocol and carries its smart-contract risk. Time: ${hold} days.`);
 
-  // The netting: the plan's own figures, charged against the launch at its band's low end.
+  // The netting: the plan's own figures, charged against the launch at the row's band low end.
   const g1 = gasUsd(chain);
   const g2 = second !== null ? gasUsd(second) : g1;
   const cash = 2 * g1 + g1 + g2 + g1 * weeks;

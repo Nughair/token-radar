@@ -23,6 +23,7 @@
     if (params.get('status')) patch.status = params.get('status');
     if (params.get('category')) patch.category = params.get('category');
     if (params.get('chain')) patch.chain = params.get('chain');
+    if (params.get('verdict')) patch.verdict = params.get('verdict');
     if (Object.keys(patch).length > 0) A.board.setState(patch);
     var slug = params.get('detail');
     if (slug) A.detail.open(slug);

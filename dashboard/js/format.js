@@ -34,6 +34,18 @@
     return n.toFixed(3) + '×';
   }
 
+  // Exact dollars with thousands separators, for the netting's figures.
+  function fmtMoney(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    return (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
+  }
+
+  // A plan's net, signed: what the netting leaves after costs and forgone yield.
+  function fmtSigned(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    return (n < 0 ? '-' : '+') + fmtUsd(Math.abs(n));
+  }
+
   function fmtFactor(n) {
     return n.toFixed(2) + '×';
   }
@@ -63,6 +75,8 @@
     fmtAge: fmtAge,
     fmtMultiple: fmtMultiple,
     fmtFactor: fmtFactor,
+    fmtMoney: fmtMoney,
+    fmtSigned: fmtSigned,
     el: el,
   };
 })();

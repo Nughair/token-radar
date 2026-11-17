@@ -43,6 +43,9 @@
       <label class="field">Chain
         <select id="chain"></select>
       </label>
+      <label class="field">Verdict
+        <select id="verdict"></select>
+      </label>
       <span class="count" id="count"></span>
     </div>
     <div class="table-wrap">
@@ -56,14 +59,15 @@
             <th data-sort="change" class="num sortable">7d change</th>
             <th data-sort="age" class="num sortable">Tracked for</th>
             <th class="num">Chains</th>
-            <th class="num">Category &times;</th>
             <th data-sort="implied" class="num sortable">Implied value</th>
+            <th data-sort="net" class="num sortable">Plan net</th>
+            <th data-sort="verdict" class="sortable">Verdict</th>
           </tr>
         </thead>
         <tbody id="board-body"></tbody>
       </table>
     </div>
-    <p class="table-note">Implied value is this board's own claim: TVL &times; the category's trading multiple &times; momentum &times; track record &times; breadth. Click a row for the full workings and its farm plan. “Records no token” is DefiLlama's record as of the snapshot date, not proof a token does not exist.</p>
+    <p class="table-note">Implied value is this board's own claim: a size curve fitted to the launches that already trade, a category offset, then momentum &times; track record &times; breadth — with the blind backtest's band around it (the small line under each value). The plan net is the row's farm plan netted at the band's low end; the verdict is FARM, THIN or SKIP. Click a row for the full workings, the netting and the plan. “Records no token” is DefiLlama's record as of the snapshot date, not proof a token does not exist.</p>
   </section>
 
   <section class="card" id="model-card" aria-label="How the radar values a launch">
@@ -73,7 +77,7 @@
 
   <section class="card" id="live-card" aria-label="Already trading">
     <h2>Already trading — the calibration set</h2>
-    <p class="section-note">These protocols' tokens already trade, so the radar never ranks them: it shows the market's own value for each. Their market-cap-to-TVL ratios are the evidence the board's category multiples are built from.</p>
+    <p class="section-note">These protocols' tokens already trade, so the radar never ranks them: it shows the market's own value for each. They are the calibration set — the size curve and the category offsets are fitted to them, and the blind test is run against them.</p>
     <div class="table-wrap">
       <table id="live-table">
         <thead>
